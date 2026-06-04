@@ -1,32 +1,34 @@
 """
-Recycling Price Prediction API
-FastAPI application — serves ML model predictions for the RecycleIQ frontend.
+app/main.py
+Recycling Price Prediction API — WasteLink v2
+FastAPI — serves ML price range predictions for waste listings.
+
+v2 changes:
+  - REMOVED: consistency_score, quality_grade from request
+  - ADDED:   condition (clean / mixed / contaminated) in request
+  - ADDED:   distance_km, collection_point (optional, exposed to callers)
+  - Model:   price_range_models_v2.pkl  (no CV dependency)
 
 Endpoints:
-  GET  /health            — liveness probe
-  GET  /model/info        — model metadata & metrics
-  POST /predict           — single item prediction
-  POST /predict/batch     — up to 100 items
+  GET  /health                — liveness probe
+  POST /predict/range         — single listing price range
+  POST /predict/range/batch   — up to 100 listings
 """
 
 import logging
 import time
 from contextlib import asynccontextmanager
 
-import numpy as np
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.features import engineer_features, compute_price_factors
-from app.model import price_model
-from app.schemas import (
-    BatchPredictionRequest,
-    BatchPredictionResponse,
-    HealthResponse,
-    ModelInfoResponse,
-    PredictionRequest,
-    PredictionResponse,
+from app.model import price_range_model
+from app.schema_range import (
+    BatchRangePredictionRequest,
+    BatchRangePredictionResponse,
+    RangePredictionRequest,
+    RangePredictionResponse,
 )
 
 # ---------------------------------------------------------------------------
@@ -40,17 +42,17 @@ logger = logging.getLogger("recycling-price-api")
 
 
 # ---------------------------------------------------------------------------
-# Lifespan — load model once at startup
+# Lifespan
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🚀  Loading price prediction model…")
+    logger.info("🚀  Loading v2 price range model…")
     try:
-        price_model.load()
-        logger.info(f"✅  Model loaded: {price_model.info()['version']}")
+        price_range_model.load()
+        logger.info("✅  v2 range model loaded (lower / mid / upper quantiles)")
     except FileNotFoundError as e:
         logger.error(f"❌  {e}")
-        logger.error("    Run: python scripts/train.py   to train the model first.")
+        logger.error("    Run: python scripts/train_v2.py first.")
     yield
     logger.info("👋  Shutting down.")
 
@@ -59,15 +61,19 @@ async def lifespan(app: FastAPI):
 # App
 # ---------------------------------------------------------------------------
 app = FastAPI(
-    title="RecycleIQ Price Prediction API",
-    description="ML-powered pricing engine for Kenya recycling centres",
-    version="1.0.0",
+    title="WasteLink Price Prediction API",
+    description=(
+        "Returns a price range (lower / recommended / upper) for a waste listing "
+        "before the seller has chosen a recycler. "
+        "v2: condition replaces consistency_score — no CV module required."
+    ),
+    version="2.0.0",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # restrict to your frontend domain in production
+    allow_origins=["*"],    # lock down to your frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -75,14 +81,15 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# Request timing middleware
+# Middleware
 # ---------------------------------------------------------------------------
 @app.middleware("http")
 async def add_timing_header(request: Request, call_next):
     start = time.perf_counter()
     response = await call_next(request)
-    ms = (time.perf_counter() - start) * 1000
-    response.headers["X-Response-Time-Ms"] = f"{ms:.1f}"
+    response.headers["X-Response-Time-Ms"] = (
+        f"{(time.perf_counter() - start) * 1000:.1f}"
+    )
     return response
 
 
@@ -102,74 +109,77 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Routes
 # ---------------------------------------------------------------------------
 
-@app.get("/health", response_model=HealthResponse, tags=["system"])
+@app.get("/health", tags=["system"])
 async def health():
-    return HealthResponse(
-        status="ok" if price_model.is_loaded else "degraded",
-        model_loaded=price_model.is_loaded,
-        version=price_model.info().get("version", "not-loaded") if price_model.is_loaded else "not-loaded",
-    )
+    return {
+        "status":       "ok" if price_range_model.is_loaded else "degraded",
+        "model_loaded": price_range_model.is_loaded,
+        "model_version": "2.0",
+    }
 
 
-@app.get("/model/info", response_model=ModelInfoResponse, tags=["system"])
-async def model_info():
-    if not price_model.is_loaded:
-        raise HTTPException(status_code=503, detail="Model not loaded. Run scripts/train.py first.")
-    return ModelInfoResponse(**price_model.info())
-
-
-@app.post("/predict", response_model=PredictionResponse, tags=["prediction"])
-async def predict(req: PredictionRequest):
+@app.post(
+    "/predict/range",
+    response_model=RangePredictionResponse,
+    tags=["prediction"],
+    summary="Get a price range for a single waste listing",
+)
+async def predict_range(req: RangePredictionRequest):
     """
-    Predict price per kg for a single waste item.
+    Called at **listing creation time** — before the seller has chosen a recycler.
 
-    - **waste_type**: one of plastic, paper, metal, glass, e_waste, organic, textile, rubber
-    - **weight_kg**: total weight in kilograms
-    - **distance_km**: distance from the user to the nearest recycling centre
-    - **consistency_score**: quality score from the vision module [0–1]
-    - **month** / **day_of_week**: used for seasonality encoding
+    The seller provides:
+    - **waste_type** — top-level category (plastic, metal, paper, …)
+    - **sub_type** — specific material (PET, copper, cardboard, …)
+    - **weight_kg** — estimated weight
+    - **condition** — clean / mixed / contaminated  *(replaces consistency_score)*
+    - **county** — seller location
+
+    Optional (sensible defaults applied if omitted):
+    - **distance_km** — defaults to 5 km
+    - **collection_point** — defaults to "commercial"
+
+    Market tier (informal / semi_formal / formal) is **auto-derived** from
+    weight + condition — no computer-vision module required.
+
+    Returns:
+    - **lower_bound** — floor price, don't accept less
+    - **recommended** — fair market rate to list at
+    - **upper_bound** — best case in current market
+    - **market_tier** — auto-detected seller tier
+    - **market_signal** — stable / moderate / volatile
     """
-    if not price_model.is_loaded:
-        raise HTTPException(status_code=503, detail="Model not loaded.")
-
+    if not price_range_model.is_loaded:
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded. Run scripts/train_v2.py first.",
+        )
     try:
-        features = engineer_features(
+        result = price_range_model.predict(
             waste_type=req.waste_type,
+            sub_type=req.sub_type,
             weight_kg=req.weight_kg,
             distance_km=req.distance_km,
-            consistency_score=req.consistency_score,
-            month=req.month,
-            day_of_week=req.day_of_week,
-            market_demand_index=req.market_demand_index,
+            condition=req.condition,
+            county=req.county,
+            collection_point=req.collection_point,
         )
 
-        result = price_model.predict(
-            feature_vector=features,
-            waste_type=req.waste_type,
-            weight_kg=req.weight_kg,
-        )
-
-        price_factors = compute_price_factors(
-            waste_type=req.waste_type,
-            weight_kg=req.weight_kg,
-            distance_km=req.distance_km,
-            consistency_score=req.consistency_score,
-            month=req.month,
-            market_demand_index=req.market_demand_index,
-            predicted_price_per_kg=result["predicted_price_per_kg"],
-        )
-
+        pr = result["price_range"]
+        mi = result["market_info"]
         logger.info(
-            f"PREDICT  type={req.waste_type}  weight={req.weight_kg}kg  "
-            f"price={result['predicted_price_per_kg']} KES/kg  "
-            f"total={result['total_estimated_price']} KES"
+            f"RANGE_PREDICT  {req.waste_type}/{req.sub_type}  "
+            f"{req.weight_kg}kg  {req.condition}  {req.county}  "
+            f"tier={mi['market_tier']}  "
+            f"→ KES {pr['lower_bound']}–{pr['upper_bound']}/kg  "
+            f"[{mi['market_signal']}]"
         )
 
-        return PredictionResponse(
-            **result,
-            price_factors=price_factors,
+        return RangePredictionResponse(
             waste_type=req.waste_type,
+            sub_type=req.sub_type,
             weight_kg=req.weight_kg,
+            **result,
         )
 
     except Exception as exc:
@@ -177,60 +187,43 @@ async def predict(req: PredictionRequest):
         raise HTTPException(status_code=422, detail=str(exc))
 
 
-@app.post("/predict/batch", response_model=BatchPredictionResponse, tags=["prediction"])
-async def predict_batch(req: BatchPredictionRequest):
+@app.post(
+    "/predict/range/batch",
+    response_model=BatchRangePredictionResponse,
+    tags=["prediction"],
+    summary="Get price ranges for up to 100 waste listings",
+)
+async def predict_range_batch(req: BatchRangePredictionRequest):
     """
-    Predict prices for up to 100 waste items in a single call.
-    More efficient than calling /predict N times.
+    Batch version of `/predict/range`.
+    Useful when a seller creates multiple listings at once.
+    Each item in `items` accepts the same fields as the single endpoint.
     """
-    if not price_model.is_loaded:
-        raise HTTPException(status_code=503, detail="Model not loaded.")
-
+    if not price_range_model.is_loaded:
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded. Run scripts/train_v2.py first.",
+        )
     try:
-        feature_rows = []
-        for item in req.items:
-            feat = engineer_features(
-                waste_type=item.waste_type,
-                weight_kg=item.weight_kg,
-                distance_km=item.distance_km,
-                consistency_score=item.consistency_score,
-                month=item.month,
-                day_of_week=item.day_of_week,
-                market_demand_index=item.market_demand_index,
-            )
-            feature_rows.append(feat.flatten())
-
-        X = np.vstack(feature_rows)
-        results = price_model.predict_batch(
-            feature_matrix=X,
-            waste_types=[i.waste_type for i in req.items],
-            weights=[i.weight_kg for i in req.items],
+        results = price_range_model.predict_batch(
+            [item.model_dump() for item in req.items]
         )
 
-        predictions = []
-        for item, result in zip(req.items, results):
-            price_factors = compute_price_factors(
+        predictions = [
+            RangePredictionResponse(
                 waste_type=item.waste_type,
+                sub_type=item.sub_type,
                 weight_kg=item.weight_kg,
-                distance_km=item.distance_km,
-                consistency_score=item.consistency_score,
-                month=item.month,
-                market_demand_index=item.market_demand_index,
-                predicted_price_per_kg=result["predicted_price_per_kg"],
-            )
-            predictions.append(PredictionResponse(
                 **result,
-                price_factors=price_factors,
-                waste_type=item.waste_type,
-                weight_kg=item.weight_kg,
-            ))
+            )
+            for item, result in zip(req.items, results)
+        ]
 
-        logger.info(f"BATCH_PREDICT  items={len(predictions)}")
+        logger.info(f"RANGE_BATCH_PREDICT  items={len(predictions)}")
 
-        return BatchPredictionResponse(
+        return BatchRangePredictionResponse(
             predictions=predictions,
             total_items=len(predictions),
-            model_version=results[0]["model_version"] if results else "unknown",
         )
 
     except Exception as exc:

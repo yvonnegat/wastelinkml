@@ -1,0 +1,38 @@
+{
+  "Ridge Regression": {
+    "Test MAE": 54.01,
+    "Test RMSE": 97.5,
+    "Test R\u00b2": 0.1477,
+    "Test MAPE%": 294.8,
+    "CV MAE": 53.72,
+    "CV MAE \u00b1": 0.76,
+    "CV R\u00b2": 0.14
+  },
+  "Random Forest": {
+    "Test MAE": 5.81,
+    "Test RMSE": 16.11,
+    "Test R\u00b2": 0.9767,
+    "Test MAPE%": 11.0,
+    "CV MAE": 5.56,
+    "CV MAE \u00b1": 0.18,
+    "CV R\u00b2": 0.9799
+  },
+  "Gradient Boosting": {
+    "Test MAE": 5.15,
+    "Test RMSE": 13.2,
+    "Test R\u00b2": 0.9844,
+    "Test MAPE%": 15.7,
+    "CV MAE": 5.15,
+    "CV MAE \u00b1": 0.1,
+    "CV R\u00b2": 0.9849
+  },
+  "XGBoost": {
+    "Test MAE": 4.76,
+    "Test RMSE": 12.45,
+    "Test R\u00b2": 0.9861,
+    "Test MAPE%": 12.4,
+    "CV MAE": 4.59,
+    "CV MAE \u00b1": 0.07,
+    "CV R\u00b2": 0.9873
+  }
+}

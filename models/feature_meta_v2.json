@@ -1,0 +1,95 @@
+{
+  "version": "2.2",
+  "features": [
+    "waste_type",
+    "sub_type",
+    "condition",
+    "county",
+    "collection_point",
+    "market_tier",
+    "log_weight",
+    "log_distance",
+    "tier_score",
+    "tier_multiplier",
+    "weight_x_condition",
+    "month_sin",
+    "month_cos",
+    "dow_sin",
+    "dow_cos"
+  ],
+  "categorical": [
+    "waste_type",
+    "sub_type",
+    "condition",
+    "county",
+    "collection_point",
+    "market_tier"
+  ],
+  "numerical": [
+    "log_weight",
+    "log_distance",
+    "tier_score",
+    "tier_multiplier",
+    "weight_x_condition",
+    "month_sin",
+    "month_cos",
+    "dow_sin",
+    "dow_cos"
+  ],
+  "volume_logic": "Bulk discount: 1kg=1.0, 100kg=0.78, 500kg=0.60",
+  "multipliers": {
+    "collection_point": {
+      "household": 0.85,
+      "commercial": 1.0,
+      "industrial": 1.08,
+      "dump_site": 0.75
+    },
+    "county": {
+      "Nairobi": 1.0,
+      "Mombasa": 0.92,
+      "Kisumu": 0.85,
+      "Nakuru": 0.8,
+      "Eldoret": 0.78,
+      "Kiambu": 0.95,
+      "Machakos": 0.88,
+      "Kajiado": 0.85
+    },
+    "seasonal": {
+      "1": 1.05,
+      "2": 1.07,
+      "3": 1.02,
+      "4": 0.93,
+      "5": 0.96,
+      "6": 0.99,
+      "7": 1.06,
+      "8": 1.08,
+      "9": 1.04,
+      "10": 0.95,
+      "11": 0.91,
+      "12": 0.98
+    },
+    "condition": {
+      "clean": 1.0,
+      "mixed": 0.88,
+      "contaminated": 0.78
+    },
+    "volume": {
+      "1": 1.0,
+      "20": 0.92,
+      "50": 0.85,
+      "100": 0.78,
+      "500": 0.68,
+      "1000": 0.6
+    }
+  },
+  "informal_discounts": {
+    "plastic": 0.62,
+    "paper": 0.7,
+    "metal": 0.9,
+    "glass": 0.55,
+    "e_waste": 0.95,
+    "organic": 0.85,
+    "rubber": 0.8,
+    "textile": 0.8
+  }
+}
