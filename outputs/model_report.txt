@@ -10,10 +10,10 @@ Total Samples: 25,000
 Features: 15 (Categorical: 6, Numerical: 9)
 
 Price Distribution:
-  Mean:    KES 28.52/kg
-  Median:  KES 7.88/kg
-  Std Dev: KES 64.80/kg
-  Range:   KES 0.54 - 616.91/kg
+  Mean:    KES 28.54/kg
+  Median:  KES 7.81/kg
+  Std Dev: KES 64.58/kg
+  Range:   KES 0.51 - 616.91/kg
 
 Market Tier Distribution:
   Formal:       12,471 samples (49.9%)
@@ -23,27 +23,27 @@ Market Tier Distribution:
 ================================================================================
 MODEL PERFORMANCE
 --------------------------------------------------------------------------------
-Median Prediction MAE: 3.52 KES/kg
-R-squared Score: 0.965
-Interval Coverage: 71.7%
+Median Prediction MAE: 3.42 KES/kg
+R-squared Score: 0.967
+Interval Coverage: 82.7%
 
 ================================================================================
 FEATURE IMPORTANCE (What Drives Prices?)
 --------------------------------------------------------------------------------
 Top 5 Most Important Features:
-  1. tier_multiplier: 26.5%
-  2. waste_type: 22.3%
-  3. sub_type: 8.4%
-  4. market_tier: 8.0%
+  1. tier_multiplier: 26.3%
+  2. waste_type: 21.5%
+  3. sub_type: 8.8%
+  4. market_tier: 8.8%
   5. condition: 7.8%
 
 Feature Category Breakdown:
-  * Material Type:     30.7%
-  * Volume/Weight:     4.0%
+  * Material Type:     30.4%
+  * Volume/Weight:     3.8%
   * Condition:         37.3%
   * Geography:         9.7%
-  * Distance:          2.2%
-  * Temporal:          8.1%
+  * Distance:          2.1%
+  * Temporal:          7.9%
 
 ================================================================================
 KEY BUSINESS INSIGHTS

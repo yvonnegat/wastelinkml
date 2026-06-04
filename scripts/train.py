@@ -269,7 +269,7 @@ XGB_BASE = dict(n_estimators=1000, learning_rate=0.03, max_depth=6,
                 reg_alpha=0.05, reg_lambda=0.5, objective='reg:quantileerror',
                 random_state=42, n_jobs=-1)
 
-QUANTILES = {'lower': 0.10, 'mid': 0.50, 'upper': 0.90}
+QUANTILES = {'lower': 0.05, 'mid': 0.50, 'upper': 0.95}
 q_models = {}
 
 for qname, q in QUANTILES.items():
